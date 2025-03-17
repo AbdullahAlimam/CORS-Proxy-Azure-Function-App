@@ -5,14 +5,11 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>CROS_AnyWhere</RootNamespace>
+    <RootNamespace>CORS_Proxy_Azure_Function_App</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="CorsProxyFunction.cs" />
     <Compile Remove="Function1.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Remove="CorsProxy.cs~RFf2e4197.TMP" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.3.0" />
