@@ -8,106 +8,104 @@ using Microsoft.Extensions.Logging;
 
 namespace CORSProxy.Functions
 {
+    /// <summary>
+    /// Represents the main entry point for handling incoming HTTP requests in the CORS proxy.
+    /// </summary>
     public class ProxyFunction
     {
-        private static string[] OriginBlacklist = Array.Empty<string>(); // Example: { "http://bad-origin.com" }
-        private static string[] OriginWhitelist = Array.Empty<string>(); // Example: { "http://allowed-origin.com" }
-        private static int MaxRedirects = 5;
-        private static int CorsMaxAge = 3600;
-
-        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger _logger;
-        private readonly IConfiguration _config;
 
-        public ProxyFunction(ILoggerFactory loggerFactory,
-            IHttpClientFactory httpClientFactory,
-            IConfiguration config)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ProxyFunction"/> class.
+        /// </summary>
+        /// <param name="loggerFactory">The factory used to create a logger instance.</param>
+        public ProxyFunction(ILoggerFactory loggerFactory)
         {
-            _httpClientFactory = httpClientFactory;
             _logger = loggerFactory.CreateLogger<ProxyFunction>();
-            _config = config;
-
-            // Fetch settings from configuration
-            OriginBlacklist = _config["CORS_BLACKLIST"]?.Split(',') ?? Array.Empty<string>();
-            OriginWhitelist = _config["CORS_WHITELIST"]?.Split(',') ?? Array.Empty<string>();
-            MaxRedirects = int.TryParse(_config["MAX_REDIRECTS"], out int max) ? max : 5;
-            CorsMaxAge = int.TryParse(_config["CORS_MAX_AGE"], out int maxAge) ? maxAge : 3600;
         }
 
+        /// <summary>
+        /// Handles incoming HTTP requests and processes them as a CORS proxy.
+        /// </summary>
+        /// <param name="req">The incoming HTTP request data.</param>
+        /// <returns>A <see cref="Task{HttpResponseData}"/> representing the HTTP response.</returns>
         [Function("CorsProxy")]
         public async Task<HttpResponseData> Run(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", "put", "delete")] HttpRequestData req)
         {
-            _logger.LogInformation("C# HTTP trigger function processed a request.");
+            _logger.LogInformation("🔹 Received HTTP request: {Method} {Url}", req.Method, req.Url);
 
-
-            // Enforce origin restrictions (if configured)
-            if (!IsOriginAllowed(req))
+            // ✅ Validate Origin: Check if the request is allowed or blocked
+            if (!OriginValidator.IsOriginAllowed(req))
             {
+                _logger.LogWarning("❌ Request blocked: Origin is NOT in the whitelist. Origin: {Origin}", req.Headers.GetValues("Origin").FirstOrDefault());
                 return await req.CreateBadRequestResponse("Origin is not allowed.", HttpStatusCode.Forbidden);
             }
 
-            // Handle Preflight Requests
+            if (OriginValidator.IsOriginBlocked(req))
+            {
+                _logger.LogWarning("❌ Request blocked: Origin is in the blacklist. Origin: {Origin}", req.Headers.GetValues("Origin").FirstOrDefault());
+                return await req.CreateBadRequestResponse("Origin is explicitly blocked.", HttpStatusCode.Forbidden);
+            }
+
+            _logger.LogInformation("✅ Origin validation passed.");
+
+            // ✅ Handle Preflight Requests (CORS OPTIONS request)
             if (req.Method == HttpMethods.Options)
             {
+                _logger.LogInformation("🔹 Handling CORS preflight request.");
+
                 var preflightResponse = req.CreateResponse(HttpStatusCode.OK);
                 CorsHelper.ApplyCorsHeaders(preflightResponse, req);
+
+                _logger.LogInformation("✅ Preflight response generated with CORS headers.");
                 return preflightResponse;
             }
 
-            // Extract target URL
+            // ✅ Extract and validate the target URL from query parameters
+            _logger.LogInformation("🔹 Extracting target URL from request query: {Query}", req.Url.Query);
+
             var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
             var targetUrl = query["url"];
-            if (string.IsNullOrEmpty(targetUrl))
-                return await req.CreateBadRequestResponse("Please provide a valid 'url' query parameter.");
 
-            // Parse the URI to extract hostname
+            if (string.IsNullOrEmpty(targetUrl))
+            {
+                _logger.LogWarning("❌ Missing or empty 'url' parameter in the request.");
+                return await req.CreateBadRequestResponse("Please provide a valid 'url' query parameter.", HttpStatusCode.BadRequest);
+            }
+
+            _logger.LogInformation("✅ Target URL extracted: {TargetUrl}", targetUrl);
+
+            // ✅ Parse the target URL and validate its format
+            _logger.LogInformation("🔹 Parsing target URL: {TargetUrl}", targetUrl);
+
             Uri? targetUri;
             if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out targetUri))
+            {
+                _logger.LogWarning("❌ Invalid URL format: {TargetUrl}", targetUrl);
                 return await req.CreateBadRequestResponse("Invalid URL format.");
-
-            // ✅ NEW: Check if the hostname has a valid TLD
-            if (!HostValidator.IsValidHost(targetUri.Host))
-            {
-                _logger.LogInformation($"Validating Host: {targetUri.Host}");
-
-                return await req.CreateBadRequestResponse($"Invalid host: {targetUri.Host}");
             }
 
-            _logger.LogInformation($"Received Validated Proxy Request for: {targetUri}");
-            var requestMessage = new HttpRequestMessage(new HttpMethod(req.Method), targetUrl);
-            _logger.LogInformation($"Forwarding request to: {requestMessage.RequestUri}");
+            _logger.LogInformation("✅ Target URL successfully parsed. Host: {Host}, Scheme: {Scheme}", targetUri.Host, targetUri.Scheme);
 
-            // Create request message
-            var proxyRequest = new HttpRequestMessage(new HttpMethod(req.Method), targetUrl);
 
-            var ignoredHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            // ✅ Validate the target hostname (checks both IP and TLD)
+            _logger.LogInformation("🔹 Validating hostname: {Host}", targetUri.Host);
+
+            if (!DomainValidator.IsValidDomain(targetUri.Host))
             {
-                "Host", "Connection", "Accept-Encoding", "Cache-Control", "postman-token"
-            };
-
-            // Only forward safe headers
-            foreach (var header in req.Headers)
-            {
-                if (!ignoredHeaders.Contains(header.Key) && !proxyRequest.Headers.Contains(header.Key))
-                {
-                    proxyRequest.Headers.TryAddWithoutValidation(header.Key, header.Value.AsEnumerable());
-                }
+                _logger.LogWarning("❌ Host validation failed: {Host} is not a valid domain or IP.", targetUri.Host);
+                return await req.CreateBadRequestResponse($"Invalid host: {targetUri.Host}", HttpStatusCode.BadRequest);
             }
-            _logger.LogInformation($"Headers: {string.Join(",", proxyRequest.Headers.Select(x => x.Key))}");
 
-            // Create an HttpClient instance
-            var httpClient = _httpClientFactory.CreateClient("IgnoreSSL");
+            _logger.LogInformation("✅ Host validation passed: {Host} is a valid domain or IP.", targetUri.Host);
 
+           
             // Send request to the target server
             HttpResponseMessage proxyResponse;
             try
             {
-                proxyResponse = await httpClient.SendAsync(proxyRequest);
-                var responseBody = await proxyResponse.Content.ReadAsStringAsync();
-
-                _logger.LogInformation($"Response Status: {proxyResponse.StatusCode}");
-                _logger.LogInformation($"Response Body: {responseBody}");
+                proxyResponse = await ProxyRequestHandler.SendProxyRequest(req, targetUrl);
             }
             catch (Exception ex)
             {
@@ -115,89 +113,9 @@ namespace CORSProxy.Functions
             }
 
             // Create response
-            var response = await HandleProxyResponse(req, proxyResponse);
+            var response = await ProxyResponseHandler.HandleProxyResponse(req, proxyResponse);
 
             return response;
-        }
-
-        public async Task<HttpResponseData> HandleProxyResponse(HttpRequestData req, HttpResponseMessage proxyResponse)
-        {
-            var response = req.CreateResponse(proxyResponse.StatusCode);
-
-            // Add CORS Headers
-            CorsHelper.ApplyCorsHeaders(response, req);
-
-            // Extract headers from proxy response
-            foreach (var header in proxyResponse.Headers)
-            {
-                if (!response.Headers.Contains(header.Key)) // Avoid duplicates
-                {
-                    response.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            // ✅ Debugging Headers
-            response.Headers.TryAddWithoutValidation("x-request-url", req.Url.ToString());
-            response.Headers.TryAddWithoutValidation("x-final-url", req.Url.ToString());
-
-            // ✅ Handle redirects
-            if ((int)proxyResponse.StatusCode >= 300 && (int)proxyResponse.StatusCode < 400)
-            {
-                if (proxyResponse.Headers.Location != null)
-                {
-                    var newLocation = proxyResponse.Headers.Location.ToString();
-                    response.Headers.TryAddWithoutValidation("X-CORS-Redirect", $"{(int)proxyResponse.StatusCode} {newLocation}");
-
-                    // Follow the redirect internally (limited to avoid infinite loops)
-                    if (!req.Headers.Contains("X-Redirect-Count"))
-                    {
-                        req.Headers.TryAddWithoutValidation("X-Redirect-Count", "1");
-                    }
-                    else if (int.TryParse(req.Headers.GetValues("X-Redirect-Count").FirstOrDefault(), out int redirectCount) && redirectCount < 5)
-                    {
-                        req.Headers.Remove("X-Redirect-Count");
-                        req.Headers.TryAddWithoutValidation("X-Redirect-Count", (redirectCount + 1).ToString());
-
-                        // ✅ Properly follow redirect
-                        var newRequest = new HttpRequestMessage(HttpMethod.Get, newLocation);
-                        var httpClient = _httpClientFactory.CreateClient("IgnoreSSL");
-                        var newResponse = await httpClient.SendAsync(newRequest);
-                        return await HandleProxyResponse(req, newResponse);
-                    }
-                }
-            }
-
-            // Strip cookies
-            response.Headers.Remove("Set-Cookie");
-            response.Headers.Remove("Set-Cookie2");
-            response.Headers.Remove("Transfer-Encoding"); // Avoid chunked encoding issues
-
-            // ✅ Copy response content & set Content-Type explicitly
-            var content = await proxyResponse.Content.ReadAsStringAsync();
-            response.Headers.TryAddWithoutValidation("Content-Type", proxyResponse.Content.Headers.ContentType?.ToString() ?? "application/json");
-            await response.WriteStringAsync(content);
-
-            return response;
-        }
-
-        public void SetHeaders()
-        {
-
-        }
-
-        /// <summary>
-        /// Check if the request's origin is allowed.
-        /// </summary>
-        private static bool IsOriginAllowed(HttpRequestData req)
-        {
-            if (OriginWhitelist.Length == 0) return true; // Allow all if whitelist is empty
-
-            if (req.Headers.TryGetValues("Origin", out var origins))
-            {
-                return origins.Any(origin => OriginWhitelist.Contains(origin));
-            }
-
-            return false;
         }
     }
 }
