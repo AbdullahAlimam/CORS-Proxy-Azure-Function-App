@@ -44,7 +44,7 @@ namespace CORSProxy
             // Enforce origin restrictions (if configured)
             if (!IsOriginAllowed(req))
             {
-                return await req.CreateBadResponse("Origin is not allowed.", HttpStatusCode.Forbidden);
+                return await req.CreateBadRequestResponse("Origin is not allowed.", HttpStatusCode.Forbidden);
             }
 
             // Handle Preflight Requests
@@ -59,19 +59,19 @@ namespace CORSProxy
             var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
             var targetUrl = query["url"];
             if (string.IsNullOrEmpty(targetUrl))
-                return await req.CreateBadResponse("Please provide a valid 'url' query parameter.");
+                return await req.CreateBadRequestResponse("Please provide a valid 'url' query parameter.");
 
             // Parse the URI to extract hostname
             Uri? targetUri;
             if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out targetUri))
-                return await req.CreateBadResponse("Invalid URL format.");
+                return await req.CreateBadRequestResponse("Invalid URL format.");
 
             // ✅ NEW: Check if the hostname has a valid TLD
             if (!HostValidator.IsValidHost(targetUri.Host))
             {
                 _logger.LogInformation($"Validating Host: {targetUri.Host}");
 
-                return await req.CreateBadResponse($"Invalid host: {targetUri.Host}");
+                return await req.CreateBadRequestResponse($"Invalid host: {targetUri.Host}");
             }
 
             _logger.LogInformation($"Received Validated Proxy Request for: {targetUri}");
