@@ -1,4 +1,4 @@
-﻿using CORS_Proxy_Azure_Function_App;
+﻿using CORSProxy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

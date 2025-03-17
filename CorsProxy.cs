@@ -1,12 +1,12 @@
 ﻿using System.Net;
-using CORS_Proxy_Azure_Function_App.Helpers;
+using CORSProxy.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace CORS_Proxy_Azure_Function_App
+namespace CORSProxy
 {
     public class ProxyFunction
     {

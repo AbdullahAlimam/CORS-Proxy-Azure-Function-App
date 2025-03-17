@@ -1,6 +1,6 @@
 ﻿using Microsoft.Azure.Functions.Worker.Http;
 
-namespace CORS_Proxy_Azure_Function_App.Helpers
+namespace CORSProxy.Helpers
 {
 
     public static class CorsHelper

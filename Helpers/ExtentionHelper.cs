@@ -2,7 +2,7 @@
 using Microsoft.Azure.Functions.Worker.Http;
 using System.Net;
 
-namespace CORS_Proxy_Azure_Function_App.Helpers
+namespace CORSProxy.Helpers
 {
     public static class ExtentionHelper
     {
