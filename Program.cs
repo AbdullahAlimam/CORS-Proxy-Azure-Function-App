@@ -1,4 +1,4 @@
-﻿using CORSProxy;
+﻿using CORSProxy.Functions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

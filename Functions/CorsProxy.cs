@@ -6,7 +6,7 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace CORSProxy
+namespace CORSProxy.Functions
 {
     public class ProxyFunction
     {
@@ -116,7 +116,7 @@ namespace CORSProxy
 
             // Create response
             var response = await HandleProxyResponse(req, proxyResponse);
-            
+
             return response;
         }
 
@@ -181,8 +181,8 @@ namespace CORSProxy
         }
 
         public void SetHeaders()
-        { 
-        
+        {
+
         }
 
         /// <summary>
