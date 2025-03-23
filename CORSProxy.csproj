@@ -1,19 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <AzureFunctionsVersion>v4</AzureFunctionsVersion>
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>CROS_AnyWhere</RootNamespace>
+    <RootNamespace>CORSProxy</RootNamespace>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="CorsProxyFunction.cs" />
-    <Compile Remove="Function1.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Remove="CorsProxy.cs~RFf2e4197.TMP" />
-  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.3.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.6.0" />
